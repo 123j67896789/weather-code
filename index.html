@@ -1,248 +1,271 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Radar + Forecast Map</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<title>Radar • Warnings</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
-<style>
-/* General */
-body {
-  margin: 0;
-  font-family: 'Inter', sans-serif;
-  background: #0a0a0a;
-  color: #fff;
-  overflow: hidden;
-}
-#map {
-  position: absolute;
-  inset: 0;
-}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet"/>
 
-/* Sidebar */
-.sidebar {
-  position: absolute;
-  top: 24px;
-  left: 24px;
-  width: 360px;
-  background: rgba(15,15,15,0.85);
-  backdrop-filter: blur(20px);
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.7);
-  z-index: 1000;
-  transition: width 0.3s ease;
-}
-.sidebar h1 {
-  font-size: 16px;
-  letter-spacing: 0.12em;
-  margin-bottom: 20px;
-  color: #eee;
-}
-.control {
-  margin-bottom: 18px;
-}
-label {
-  display: block;
-  font-size: 12px;
-  color: #bbb;
-  margin-bottom: 6px;
-}
-.select, input[type=range] {
-  width: 100%;
-}
-.select {
-  background: rgba(30,30,30,0.9);
-  color: #fff;
-  border: none;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.select:hover {
-  background: rgba(50,50,50,0.95);
-}
-input[type=range] {
-  -webkit-appearance: none;
-  height: 6px;
-  border-radius: 3px;
-  background: #444;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-input[type=range]:hover {
-  background: #666;
-}
-input[type=range]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  background: #00bfff;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-  transition: background 0.2s;
-}
-input[type=range]::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: #00bfff;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-  border: none;
-}
-#forecastControl { display: none; }
-#forecastTime {
-  font-size: 11px;
-  color: #999;
-  margin-top: 6px;
-  text-align: center;
-}
-#errorMsg {
-  color: #ff5555;
-  font-size: 12px;
-  margin-top: 10px;
-  display: none;
-}
-.info {
-  font-size: 11px;
-  color: #aaa;
-  margin-top: 12px;
-  text-align: center;
-}
+<style>
+body{margin:0;background:#0a0a0a;color:#fff;font-family:Inter,sans-serif;overflow:hidden}
+#map{position:absolute;inset:0}
+.sidebar{
+position:absolute;top:24px;left:24px;width:360px;
+background:rgba(15,15,15,.85);backdrop-filter:blur(20px);
+border-radius:16px;padding:20px;z-index:1000}
+h1{font-size:16px;letter-spacing:.12em;margin-bottom:18px}
+.control{margin-bottom:14px}
+label{font-size:12px;color:#bbb;display:block;margin-bottom:6px}
+.select,input[type=range]{
+width:100%;background:#1e1e1e;color:#fff;border:none;
+padding:10px 12px;border-radius:10px}
+button.select{cursor:pointer}
 </style>
 </head>
+
 <body>
 <div id="map"></div>
+
 <div class="sidebar">
-<h1>NATIONAL RADAR & FORECAST</h1>
+<h1>NATIONAL RADAR & WARNINGS</h1>
 
 <div class="control">
 <label>Product</label>
 <select id="product" class="select">
-<option value="reflectivity">Observed: Base Reflectivity</option>
-<option value="wind_speed">Observed: Surface Wind Speed</option>
-<option value="satellite_vis">Satellite Visible</option>
-<option value="forecast_hrrr_refp">HRRR: Reflectivity + Precip</option>
-<option value="forecast_hrrr_refd">HRRR: Reflectivity Only</option>
-<option value="ndfd_tmin">NOAA Forecast: Min Temp</option>
-<option value="ndfd_tmax">NOAA Forecast: Max Temp</option>
-<option value="ndfd_pop12">NOAA Forecast: Precip Probability</option>
-<option value="ndfd_qpf">NOAA Forecast: Quantitative Precip</option>
-<option value="ndfd_wspd">NOAA Forecast: Wind Speed</option>
+<option value="reflectivity">Observed: Reflectivity</option>
+<option value="wind">Observed: Surface Wind</option>
+<option value="sat_vis">Satellite: Visible</option>
+<option value="sat_ir">Satellite: Infrared</option>
+<option value="sat_wv">Satellite: Water Vapor</option>
+<option value="hrrr">HRRR Forecast Reflectivity</option>
 </select>
 </div>
 
-<div class="control" id="forecastControl">
-<label>Forecast Hour</label>
-<input id="forecastSlider" type="range" min="0" max="18" step="1" value="0"/>
-<div id="forecastTime">Forecast Hour: +0 hr</div>
+<div class="control">
+<label>Official NWS Warnings</label>
+<select id="nwsToggle" class="select">
+<option value="on">On</option>
+<option value="off">Off</option>
+</select>
 </div>
 
 <div class="control">
-<label>Opacity</label>
-<input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85"/>
+<label>Custom Warnings</label>
+<select id="customToggle" class="select">
+<option value="off">Off</option>
+<option value="on">On</option>
+</select>
 </div>
 
-<div id="errorMsg">Tiles not loading – try refresh or wait</div>
-<div class="info">National radar, satellite, HRRR/NDFD forecast layers • IEM / NOAA / NWS</div>
+<div class="control">
+<label>Admin Password</label>
+<input id="adminPass" class="select" placeholder="Enter password">
+</div>
+
+<div id="customPanel" style="display:none">
+
+<div class="control">
+<label>Warning Type</label>
+<select id="warnType" class="select">
+
+<optgroup label="Severe Weather">
+<option value="Tornado Warning">Tornado Warning</option>
+<option value="Tornado Watch">Tornado Watch</option>
+<option value="Severe Thunderstorm Warning">Severe Thunderstorm Warning</option>
+<option value="Severe Thunderstorm Watch">Severe Thunderstorm Watch</option>
+</optgroup>
+
+<optgroup label="Flooding">
+<option value="Flash Flood Warning">Flash Flood Warning</option>
+<option value="Flash Flood Watch">Flash Flood Watch</option>
+<option value="Flood Warning">Flood Warning</option>
+<option value="Flood Advisory">Flood Advisory</option>
+</optgroup>
+
+<optgroup label="Winter Weather">
+<option value="Winter Storm Warning">Winter Storm Warning</option>
+<option value="Winter Weather Advisory">Winter Weather Advisory</option>
+<option value="Ice Storm Warning">Ice Storm Warning</option>
+<option value="Blizzard Warning">Blizzard Warning</option>
+<option value="Snow Squall Warning">Snow Squall Warning</option>
+</optgroup>
+
+<optgroup label="Wind / Heat">
+<option value="High Wind Warning">High Wind Warning</option>
+<option value="Wind Advisory">Wind Advisory</option>
+<option value="Heat Advisory">Heat Advisory</option>
+<option value="Excessive Heat Warning">Excessive Heat Warning</option>
+</optgroup>
+
+<optgroup label="Marine / Coastal">
+<option value="Hurricane Warning">Hurricane Warning</option>
+<option value="Hurricane Watch">Hurricane Watch</option>
+<option value="Tropical Storm Warning">Tropical Storm Warning</option>
+<option value="Tropical Storm Watch">Tropical Storm Watch</option>
+<option value="Storm Surge Warning">Storm Surge Warning</option>
+</optgroup>
+
+<optgroup label="Other">
+<option value="Dense Fog Advisory">Dense Fog Advisory</option>
+<option value="Special Weather Statement">Special Weather Statement</option>
+<option value="Custom">Custom Warning</option>
+</optgroup>
+
+</select>
+</div>
+
+<div class="control">
+<label>Description</label>
+<input id="warnDesc" class="select">
+</div>
+
+<div class="control">
+<button id="startDraw" class="select">Start Drawing</button>
+<button id="finishDraw" class="select" style="margin-top:6px">Finish Warning</button>
+</div>
+
+</div>
 </div>
 
 <script>
-// Leaflet map setup
-const map = L.map('map',{center:[36.19,-94.13],zoom:8,zoomControl:false});
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(map);
+/* MAP */
+const map=L.map("map",{center:[36.2,-94.1],zoom:7,zoomControl:false});
+map.doubleClickZoom.disable();
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{subdomains:"abcd"}).addTo(map);
 
-let radarLayer=null;
-const productSelect=document.getElementById('product');
-const forecastSlider=document.getElementById('forecastSlider');
-const forecastTime=document.getElementById('forecastTime');
-const forecastControl=document.getElementById('forecastControl');
-const opacityControl=document.getElementById('opacity');
-const errorMsg=document.getElementById('errorMsg');
+let baseLayer=null;
+const nwsLayer=L.layerGroup().addTo(map);
+const customLayer=L.layerGroup().addTo(map);
 
-function getHRRRSuffix(){return productSelect.value==='forecast_hrrr_refp'?'REFP':'REFD';}
-
+/* PRODUCTS */
+const product=document.getElementById("product");
 function loadProduct(){
-  if(radarLayer) map.removeLayer(radarLayer);
-  errorMsg.style.display='none';
-  const ts = Date.now();
-  const p = productSelect.value;
-
-  // Show slider only for forecast layers
-  if(p.startsWith('forecast_') || p.startsWith('ndfd')) forecastControl.style.display='block';
-  else forecastControl.style.display='none';
-
-  // OBSERVED / SATELLITE
-  if(['reflectivity','wind_speed','satellite_vis'].includes(p)){
-    let url='';
-    switch(p){
-      case 'reflectivity': url='https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q/{z}/{x}/{y}.png?t='+ts; break;
-      case 'wind_speed': url='https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/mrms::WIND-0/{z}/{x}/{y}.png?t='+ts; break;
-      case 'satellite_vis': url='https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-vis-1km/{z}/{x}/{y}.png?t='+ts; break;
-    }
-    radarLayer=L.tileLayer(url,{opacity:opacityControl.value,maxZoom:19}).addTo(map);
-  }
-
-  // HRRR forecast
-  else if(p.startsWith('forecast_hrrr')){
-    let hour=Math.min(parseInt(forecastSlider.value),18);
-    const fStr=String(hour*60).padStart(4,'0');
-    const suffix=getHRRRSuffix();
-    const url=`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr::${suffix}-F${fStr}-0/{z}/{x}/{y}.png?t=${ts}`;
-    radarLayer=L.tileLayer(url,{opacity:opacityControl.value,maxZoom:19}).addTo(map);
-    forecastTime.textContent=`Forecast Hour: +${hour} hr (${suffix})`;
-  }
-
-  // NDFD forecast
-  else if(p.startsWith('ndfd')){
-    let hour=parseInt(forecastSlider.value);
-    const ndfdBase='https://digital.weather.gov/ndfd/conus/wms';
-    let layerName='';
-    switch(p){
-      case 'ndfd_tmin': layerName='ndfd.conus.tmin'; break;
-      case 'ndfd_tmax': layerName='ndfd.conus.tmax'; break;
-      case 'ndfd_pop12': layerName='ndfd.conus.pop12'; break;
-      case 'ndfd_qpf': layerName='ndfd.conus.qpf'; break;
-      case 'ndfd_wspd': layerName='ndfd.conus.wspd'; break;
-    }
-    const forecastDate=new Date();
-    forecastDate.setUTCHours(forecastDate.getUTCHours()+hour);
-    const isoTime=forecastDate.toISOString();
-    radarLayer=L.tileLayer.wms(ndfdBase,{
-      layers:layerName,
-      format:'image/png',
-      transparent:true,
-      opacity:opacityControl.value,
-      time:isoTime
-    }).addTo(map);
-    forecastTime.textContent=`Forecast Hour: +${hour} hr`;
-  }
-
-  radarLayer.on('tileerror',()=>{ errorMsg.style.display='block'; });
+if(baseLayer) map.removeLayer(baseLayer);
+const ts=Date.now();
+let url={
+reflectivity:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q/{z}/{x}/{y}.png?t=${ts}`,
+wind:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/mrms::WIND-0/{z}/{x}/{y}.png?t=${ts}`,
+sat_vis:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-vis-1km/{z}/{x}/{y}.png?t=${ts}`,
+sat_ir:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-ir-4km/{z}/{x}/{y}.png?t=${ts}`,
+sat_wv:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-wv-4km/{z}/{x}/{y}.png?t=${ts}`,
+hrrr:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr::REFD-F0000-0/{z}/{x}/{y}.png?t=${ts}`
+}[product.value];
+baseLayer=L.tileLayer(url,{opacity:.85}).addTo(map);
 }
+product.onchange=loadProduct; loadProduct();
 
-// Event listeners
-productSelect.addEventListener('change',loadProduct);
-forecastSlider.addEventListener('input',loadProduct);
-opacityControl.addEventListener('input',()=>{if(radarLayer) radarLayer.setOpacity(opacityControl.value);});
+/* OFFICIAL NWS */
+const nwsToggle=document.getElementById("nwsToggle");
+async function loadNWS(){
+nwsLayer.clearLayers();
+if(nwsToggle.value==="off") return;
+const r=await fetch("https://api.weather.gov/alerts/active.geojson");
+const d=await r.json();
+d.features.forEach(f=>{
+if(!f.geometry) return;
+const c=f.geometry.coordinates[0].map(p=>[p[1],p[0]]);
+L.polygon(c,{color:"#ff5555",fillOpacity:.25,weight:2})
+.bindPopup(`<b>${f.properties.event}</b><br>${f.properties.headline}`)
+.addTo(nwsLayer);
+});
+}
+nwsToggle.onchange=loadNWS; loadNWS();
 
-// Auto-refresh observed layers
-setInterval(()=>{
-  if(radarLayer && !productSelect.value.startsWith('forecast_') && !productSelect.value.startsWith('ndfd')){
-    const newTs=Date.now();
-    const baseUrl=radarLayer.getTileUrl({z:0,x:0,y:0}).split('?')[0];
-    radarLayer.setUrl(baseUrl+'?t='+newTs);
-  }
-},5*60*1000);
+/* CUSTOM WARNINGS */
+const PRESET_TEXT={
+"Tornado Warning":"A confirmed or radar-indicated tornado is occurring. Take shelter immediately.",
+"Tornado Watch":"Conditions are favorable for tornado development.",
+"Severe Thunderstorm Warning":"Damaging winds or large hail detected.",
+"Severe Thunderstorm Watch":"Conditions favorable for severe thunderstorms.",
+"Flash Flood Warning":"Flash flooding is occurring or imminent.",
+"Flash Flood Watch":"Conditions favorable for flash flooding.",
+"Flood Warning":"Flooding is expected or occurring.",
+"Flood Advisory":"Minor flooding possible.",
+"Winter Storm Warning":"Heavy snow or ice expected.",
+"Winter Weather Advisory":"Wintry conditions may impact travel.",
+"Ice Storm Warning":"Significant ice accumulation expected.",
+"Blizzard Warning":"Whiteout conditions and strong winds expected.",
+"Snow Squall Warning":"Sudden intense snow causing whiteout conditions.",
+"High Wind Warning":"Damaging winds expected.",
+"Wind Advisory":"Strong winds may cause minor damage.",
+"Heat Advisory":"Hot conditions may pose health risks.",
+"Excessive Heat Warning":"Dangerously hot conditions expected.",
+"Hurricane Warning":"Hurricane conditions expected.",
+"Hurricane Watch":"Hurricane conditions possible.",
+"Tropical Storm Warning":"Tropical storm conditions expected.",
+"Tropical Storm Watch":"Tropical storm conditions possible.",
+"Storm Surge Warning":"Life-threatening coastal flooding expected.",
+"Dense Fog Advisory":"Widespread dense fog reducing visibility.",
+"Special Weather Statement":"Significant weather conditions possible."
+};
 
-loadProduct();
+const COLORS={
+"Tornado Warning":"#ff0000","Tornado Watch":"#ff66cc",
+"Severe Thunderstorm Warning":"#ff8800","Severe Thunderstorm Watch":"#ffaa00",
+"Flash Flood Warning":"#00ffcc","Flash Flood Watch":"#66ffff",
+"Flood Warning":"#00ccff","Flood Advisory":"#55ffff",
+"Winter Storm Warning":"#66ccff","Winter Weather Advisory":"#99ddff",
+"Ice Storm Warning":"#99ffff","Blizzard Warning":"#ffffff",
+"Snow Squall Warning":"#bbbbff","High Wind Warning":"#cccccc",
+"Wind Advisory":"#aaaaaa","Heat Advisory":"#ff6600",
+"Excessive Heat Warning":"#ff3300","Hurricane Warning":"#cc00ff",
+"Hurricane Watch":"#dd66ff","Tropical Storm Warning":"#00ff66",
+"Tropical Storm Watch":"#66ff99","Storm Surge Warning":"#0099ff",
+"Dense Fog Advisory":"#999999","Special Weather Statement":"#ffff00",
+"Custom":"#ff00ff"
+};
+
+let admin=false,drawing=false,pts=[],temp=null;
+const adminPass=document.getElementById("adminPass");
+const customPanel=document.getElementById("customPanel");
+const customToggle=document.getElementById("customToggle");
+const warnType=document.getElementById("warnType");
+const warnDesc=document.getElementById("warnDesc");
+
+adminPass.oninput=()=>{
+if(adminPass.value==="123"){
+admin=true;customPanel.style.display="block";
+localStorage.setItem("admin","true");
+}};
+if(localStorage.getItem("admin")==="true"){admin=true;customPanel.style.display="block";}
+
+warnType.onchange=()=>{
+if(warnType.value!=="Custom"){
+warnDesc.value=PRESET_TEXT[warnType.value]||"";
+warnDesc.disabled=true;
+}else{
+warnDesc.value="";warnDesc.disabled=false;
+}};
+
+customToggle.onchange=()=>customToggle.value==="on"?map.addLayer(customLayer):map.removeLayer(customLayer);
+
+document.getElementById("startDraw").onclick=()=>{
+if(!admin) return;
+drawing=true;pts=[];
+if(temp) map.removeLayer(temp);
+};
+
+map.on("click",e=>{
+if(!drawing) return;
+pts.push([e.latlng.lat,e.latlng.lng]);
+if(temp) map.removeLayer(temp);
+temp=L.polyline(pts,{color:"#ff00ff",dashArray:"6,6"}).addTo(map);
+});
+
+document.getElementById("finishDraw").onclick=()=>{
+if(!drawing||pts.length<3) return;
+drawing=false;if(temp) map.removeLayer(temp);
+L.polygon(pts,{
+color:COLORS[warnType.value],
+fillOpacity:.3,weight:2
+}).bindPopup(`<b>${warnType.value}</b><br>${warnDesc.value}<br><i>Custom Issued</i>`)
+.addTo(customLayer);
+};
 </script>
 </body>
 </html>
+
 
