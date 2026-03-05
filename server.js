@@ -1,53 +1,40 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const cors = require("cors");
+const WebSocket = require("ws");
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" }
-});
+const wss = new WebSocket.Server({ port: 8080 });
 
-app.use(cors());
-app.use(express.json());
-
-/* ================= STORAGE ================= */
-// In-memory (replace with DB later)
 let warnings = [];
 
-/* ================= REST API ================= */
-app.get("/warnings", (req, res) => {
-  res.json(warnings);
-});
-
-app.post("/warnings", (req, res) => {
-  const warning = {
-    id: Date.now().toString(),
-    ...req.body,
-    created: Date.now()
-  };
-
-  warnings.push(warning);
-  io.emit("new-warning", warning); //  broadcast to all users
-
-  res.status(201).json(warning);
-});
-
-/* ================= SOCKET.IO ================= */
-io.on("connection", socket => {
+wss.on("connection", (ws) => {
   console.log("Client connected");
 
-  // Send all existing warnings on connect
-  socket.emit("init-warnings", warnings);
+  // Send existing warnings to new user
+  ws.send(
+    JSON.stringify({
+      type: "INIT",
+      payload: warnings,
+    })
+  );
 
-  socket.on("disconnect", () => {
-    console.log("Client disconnected");
+  ws.on("message", (message) => {
+    const data = JSON.parse(message);
+
+    if (data.type === "NEW_WARNING") {
+      warnings.push(data.payload);
+
+      // Broadcast to ALL connected users
+      wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(
+            JSON.stringify({
+              type: "NEW_WARNING",
+              payload: data.payload,
+            })
+          );
+        }
+      });
+    }
   });
 });
 
-/* ================= START ================= */
-const PORT = 3000;
-server.listen(PORT, () =>
-  console.log(`Backend running on http://localhost:${PORT}`)
-);
+console.log("WebSocket running on port 8080");
+
