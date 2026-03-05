@@ -1,273 +1,372 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<title>Radar • Warnings</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Live SPC + NWS Warning System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet"/>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<style>
-body{margin:0;background:#0a0a0a;color:#fff;font-family:Inter,sans-serif;overflow:hidden}
-#map{position:absolute;inset:0}
-.sidebar{
-position:absolute;top:24px;left:24px;width:360px;
-background:rgba(15,15,15,.85);backdrop-filter:blur(20px);
-border-radius:16px;padding:20px;z-index:1000}
-h1{font-size:16px;letter-spacing:.12em;margin-bottom:18px}
-.control{margin-bottom:14px}
-label{font-size:12px;color:#bbb;display:block;margin-bottom:6px}
-.select,input[type=range]{
-width:100%;background:#1e1e1e;color:#fff;border:none;
-padding:10px 12px;border-radius:10px}
-button.select{cursor:pointer}
-</style>
-</head>
+    <style>
+      body {
+        margin: 0;
+        background: #0b0f14;
+        color: white;
+        font-family: Arial;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
 
-<body>
-<div id="map"></div>
+      .sidebar {
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        width: 420px;
+        background: rgba(15, 20, 25, 0.97);
+        padding: 18px;
+        border-radius: 16px;
+        z-index: 1000;
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8);
+        max-height: 90vh;
+        overflow: auto;
+      }
 
-<div class="sidebar">
-<h1>NATIONAL RADAR & WARNINGS</h1>
+      .tabs button {
+        width: 32%;
+        margin-right: 4px;
+        margin-bottom: 12px;
+        background: #1c2733;
+        color: #00bfff;
+        border: none;
+        padding: 8px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
 
-<div class="control">
-<label>Product</label>
-<select id="product" class="select">
-<option value="reflectivity">Observed: Reflectivity</option>
-<option value="wind">Observed: Surface Wind</option>
-<option value="sat_vis">Satellite: Visible</option>
-<option value="sat_ir">Satellite: Infrared</option>
-<option value="sat_wv">Satellite: Water Vapor</option>
-<option value="hrrr">HRRR Forecast Reflectivity</option>
-</select>
-</div>
+      .tabs button.active {
+        background: #0077ff;
+        color: white;
+      }
 
-<div class="control">
-<label>Official NWS Warnings</label>
-<select id="nwsToggle" class="select">
-<option value="on">On</option>
-<option value="off">Off</option>
-</select>
-</div>
+      .section {
+        display: none;
+      }
+      .section.active {
+        display: block;
+      }
 
-<div class="control">
-<label>Custom Warnings</label>
-<select id="customToggle" class="select">
-<option value="off">Off</option>
-<option value="on">On</option>
-</select>
-</div>
+      h2 {
+        color: #00bfff;
+        margin-top: 0;
+      }
 
-<div class="control">
-<label>Admin Password</label>
-<input id="adminPass" class="select" placeholder="Enter password">
-</div>
+      select,
+      input,
+      textarea,
+      button {
+        width: 100%;
+        margin-bottom: 10px;
+        padding: 8px;
+        border-radius: 8px;
+        border: none;
+        background: #1c2733;
+        color: white;
+      }
 
-<div id="customPanel" style="display:none">
+      button {
+        background: #0077ff;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #0099ff;
+      }
+      .draw-btn {
+        background: #444;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
 
-<div class="control">
-<label>Warning Type</label>
-<select id="warnType" class="select">
+    <div class="sidebar">
+      <div class="tabs">
+        <button onclick="showTab('radar')" class="active">Radar</button>
+        <button onclick="showTab('nws')">NWS</button>
+        <button onclick="showTab('spc')">SPC</button>
+      </div>
 
-<optgroup label="Severe Weather">
-<option value="Tornado Warning">Tornado Warning</option>
-<option value="Tornado Watch">Tornado Watch</option>
-<option value="Severe Thunderstorm Warning">Severe Thunderstorm Warning</option>
-<option value="Severe Thunderstorm Watch">Severe Thunderstorm Watch</option>
-</optgroup>
+      <!-- RADAR -->
+      <div id="radar" class="section active">
+        <h2>Radar</h2>
+        <select id="radarProduct">
+          <option value="n0q">Base Reflectivity</option>
+          <option value="echo">Echo Tops</option>
+        </select>
+      </div>
 
-<optgroup label="Flooding">
-<option value="Flash Flood Warning">Flash Flood Warning</option>
-<option value="Flash Flood Watch">Flash Flood Watch</option>
-<option value="Flood Warning">Flood Warning</option>
-<option value="Flood Advisory">Flood Advisory</option>
-</optgroup>
+      <!-- NWS -->
+      <div id="nws" class="section">
+        <h2>NWS Warning Issuer</h2>
 
-<optgroup label="Winter Weather">
-<option value="Winter Storm Warning">Winter Storm Warning</option>
-<option value="Winter Weather Advisory">Winter Weather Advisory</option>
-<option value="Ice Storm Warning">Ice Storm Warning</option>
-<option value="Blizzard Warning">Blizzard Warning</option>
-<option value="Snow Squall Warning">Snow Squall Warning</option>
-</optgroup>
+        <select id="warnType"></select>
+        <select id="hazardSelect"></select>
 
-<optgroup label="Wind / Heat">
-<option value="High Wind Warning">High Wind Warning</option>
-<option value="Wind Advisory">Wind Advisory</option>
-<option value="Heat Advisory">Heat Advisory</option>
-<option value="Excessive Heat Warning">Excessive Heat Warning</option>
-</optgroup>
+        <textarea
+          id="warnDesc"
+          placeholder="Full Warning Description..."
+        ></textarea>
+        <input
+          type="number"
+          id="warnDuration"
+          value="30"
+          placeholder="Duration (min)"
+        />
 
-<optgroup label="Marine / Coastal">
-<option value="Hurricane Warning">Hurricane Warning</option>
-<option value="Hurricane Watch">Hurricane Watch</option>
-<option value="Tropical Storm Warning">Tropical Storm Warning</option>
-<option value="Tropical Storm Watch">Tropical Storm Watch</option>
-<option value="Storm Surge Warning">Storm Surge Warning</option>
-</optgroup>
+        <button class="draw-btn" onclick="startDrawing()">Draw Polygon</button>
+        <button onclick="issueNWS()">Issue Warning</button>
+      </div>
 
-<optgroup label="Other">
-<option value="Dense Fog Advisory">Dense Fog Advisory</option>
-<option value="Special Weather Statement">Special Weather Statement</option>
-<option value="Custom">Custom Warning</option>
-</optgroup>
+      <!-- SPC -->
+      <div id="spc" class="section">
+        <h2>SPC Outlook Issuer</h2>
 
-</select>
-</div>
+        <select id="spcRisk">
+          <option>TSTM</option>
+          <option>Marginal</option>
+          <option>Slight</option>
+          <option>Enhanced</option>
+          <option>Moderate</option>
+          <option>High</option>
+        </select>
 
-<div class="control">
-<label>Description</label>
-<input id="warnDesc" class="select">
-</div>
+        <textarea id="spcDesc" placeholder="SPC Discussion Text..."></textarea>
 
-<div class="control">
-<button id="startDraw" class="select">Start Drawing</button>
-<button id="finishDraw" class="select" style="margin-top:6px">Finish Warning</button>
-</div>
+        <button class="draw-btn" onclick="startDrawing()">
+          Draw Risk Area
+        </button>
+        <button onclick="issueSPC()">Issue SPC Outlook</button>
+      </div>
+    </div>
 
-</div>
-</div>
+    <script>
+      /* ================= MAP ================= */
 
-<script>
-/* MAP */
-const map=L.map("map",{center:[36.2,-94.1],zoom:7,zoomControl:false});
-map.doubleClickZoom.disable();
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{subdomains:"abcd"}).addTo(map);
+      const map = L.map("map").setView([39, -95], 5);
+      let mapInstance = map;
 
-let baseLayer=null;
-const nwsLayer=L.layerGroup().addTo(map);
-const customLayer=L.layerGroup().addTo(map);
+      L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+      ).addTo(map);
 
-/* PRODUCTS */
-const product=document.getElementById("product");
-function loadProduct(){
-if(baseLayer) map.removeLayer(baseLayer);
-const ts=Date.now();
-let url={
-reflectivity:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q/{z}/{x}/{y}.png?t=${ts}`,
-wind:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/mrms::WIND-0/{z}/{x}/{y}.png?t=${ts}`,
-sat_vis:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-vis-1km/{z}/{x}/{y}.png?t=${ts}`,
-sat_ir:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-ir-4km/{z}/{x}/{y}.png?t=${ts}`,
-sat_wv:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/goes-wv-4km/{z}/{x}/{y}.png?t=${ts}`,
-hrrr:`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr::REFD-F0000-0/{z}/{x}/{y}.png?t=${ts}`
-}[product.value];
-baseLayer=L.tileLayer(url,{opacity:.85}).addTo(map);
-}
-product.onchange=loadProduct; loadProduct();
+      let radarLayer;
 
-/* OFFICIAL NWS */
-const nwsToggle=document.getElementById("nwsToggle");
-async function loadNWS(){
-nwsLayer.clearLayers();
-if(nwsToggle.value==="off") return;
-const r=await fetch("https://api.weather.gov/alerts/active.geojson");
-const d=await r.json();
-d.features.forEach(f=>{
-if(!f.geometry) return;
-const c=f.geometry.coordinates[0].map(p=>[p[1],p[0]]);
-L.polygon(c,{color:"#ff5555",fillOpacity:.25,weight:2})
-.bindPopup(`<b>${f.properties.event}</b><br>${f.properties.headline}`)
-.addTo(nwsLayer);
-});
-}
-nwsToggle.onchange=loadNWS; loadNWS();
+      function loadRadar() {
+        if (radarLayer) map.removeLayer(radarLayer);
+        const product = document.getElementById("radarProduct").value;
+        radarLayer = L.tileLayer(
+          `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-${product}/{z}/{x}/{y}.png`
+        ).addTo(map);
+      }
+      document.getElementById("radarProduct").onchange = loadRadar;
+      loadRadar();
 
-/* CUSTOM WARNINGS */
-const PRESET_TEXT={
-"Tornado Warning":"A confirmed or radar-indicated tornado is occurring. Take shelter immediately.",
-"Tornado Watch":"Conditions are favorable for tornado development.",
-"Severe Thunderstorm Warning":"Damaging winds or large hail detected.",
-"Severe Thunderstorm Watch":"Conditions favorable for severe thunderstorms.",
-"Flash Flood Warning":"Flash flooding is occurring or imminent.",
-"Flash Flood Watch":"Conditions favorable for flash flooding.",
-"Flood Warning":"Flooding is expected or occurring.",
-"Flood Advisory":"Minor flooding possible.",
-"Winter Storm Warning":"Heavy snow or ice expected.",
-"Winter Weather Advisory":"Wintry conditions may impact travel.",
-"Ice Storm Warning":"Significant ice accumulation expected.",
-"Blizzard Warning":"Whiteout conditions and strong winds expected.",
-"Snow Squall Warning":"Sudden intense snow causing whiteout conditions.",
-"High Wind Warning":"Damaging winds expected.",
-"Wind Advisory":"Strong winds may cause minor damage.",
-"Heat Advisory":"Hot conditions may pose health risks.",
-"Excessive Heat Warning":"Dangerously hot conditions expected.",
-"Hurricane Warning":"Hurricane conditions expected.",
-"Hurricane Watch":"Hurricane conditions possible.",
-"Tropical Storm Warning":"Tropical storm conditions expected.",
-"Tropical Storm Watch":"Tropical storm conditions possible.",
-"Storm Surge Warning":"Life-threatening coastal flooding expected.",
-"Dense Fog Advisory":"Widespread dense fog reducing visibility.",
-"Special Weather Statement":"Significant weather conditions possible."
-};
+      /* ================= TABS ================= */
 
-const COLORS={
-"Tornado Warning":"#ff0000","Tornado Watch":"#ff66cc",
-"Severe Thunderstorm Warning":"#ff8800","Severe Thunderstorm Watch":"#ffaa00",
-"Flash Flood Warning":"#00ffcc","Flash Flood Watch":"#66ffff",
-"Flood Warning":"#00ccff","Flood Advisory":"#55ffff",
-"Winter Storm Warning":"#66ccff","Winter Weather Advisory":"#99ddff",
-"Ice Storm Warning":"#99ffff","Blizzard Warning":"#ffffff",
-"Snow Squall Warning":"#bbbbff","High Wind Warning":"#cccccc",
-"Wind Advisory":"#aaaaaa","Heat Advisory":"#ff6600",
-"Excessive Heat Warning":"#ff3300","Hurricane Warning":"#cc00ff",
-"Hurricane Watch":"#dd66ff","Tropical Storm Warning":"#00ff66",
-"Tropical Storm Watch":"#66ff99","Storm Surge Warning":"#0099ff",
-"Dense Fog Advisory":"#999999","Special Weather Statement":"#ffff00",
-"Custom":"#ff00ff"
-};
+      function showTab(id) {
+        document
+          .querySelectorAll(".section")
+          .forEach((s) => s.classList.remove("active"));
+        document.getElementById(id).classList.add("active");
+        document
+          .querySelectorAll(".tabs button")
+          .forEach((b) => b.classList.remove("active"));
+        event.target.classList.add("active");
+      }
 
-let admin=false,drawing=false,pts=[],temp=null;
-const adminPass=document.getElementById("adminPass");
-const customPanel=document.getElementById("customPanel");
-const customToggle=document.getElementById("customToggle");
-const warnType=document.getElementById("warnType");
-const warnDesc=document.getElementById("warnDesc");
+      /* ================= HAZARD LOGIC ================= */
 
-adminPass.oninput=()=>{
-if(adminPass.value==="123"){
-admin=true;customPanel.style.display="block";
-localStorage.setItem("admin","true");
-}};
-if(localStorage.getItem("admin")==="true"){admin=true;customPanel.style.display="block";}
+      const hazardMap = {
+        "Tornado Warning": [
+          "Large and Dangerous Tornado",
+          "Confirmed Tornado",
+          "Tornado Emergency",
+        ],
+        "Severe Thunderstorm Warning": [
+          "80 MPH Winds",
+          "Baseball Size Hail",
+          "Considerable Damage",
+        ],
+        "Flash Flood Warning": [
+          "Life Threatening Flooding",
+          "Rapid Water Rise",
+        ],
+        "Winter Storm Warning": ["Heavy Snow", "Whiteout Conditions"],
+        "Red Flag Warning": ["Extreme Fire Spread"],
+      };
 
-warnType.onchange=()=>{
-if(warnType.value!=="Custom"){
-warnDesc.value=PRESET_TEXT[warnType.value]||"";
-warnDesc.disabled=true;
-}else{
-warnDesc.value="";warnDesc.disabled=false;
-}};
+      const warnTypeSelect = document.getElementById("warnType");
+      Object.keys(hazardMap).forEach((type) => {
+        let o = document.createElement("option");
+        o.textContent = type;
+        warnTypeSelect.appendChild(o);
+      });
 
-customToggle.onchange=()=>customToggle.value==="on"?map.addLayer(customLayer):map.removeLayer(customLayer);
+      function updateHazards() {
+        const hazardSelect = document.getElementById("hazardSelect");
+        hazardSelect.innerHTML = "";
+        hazardMap[warnTypeSelect.value].forEach((h) => {
+          let o = document.createElement("option");
+          o.textContent = h;
+          hazardSelect.appendChild(o);
+        });
+      }
+      warnTypeSelect.onchange = updateHazards;
+      updateHazards();
 
-document.getElementById("startDraw").onclick=()=>{
-if(!admin) return;
-drawing=true;pts=[];
-if(temp) map.removeLayer(temp);
-};
+      /* ================= DRAW TOOL ================= */
 
-map.on("click",e=>{
-if(!drawing) return;
-pts.push([e.latlng.lat,e.latlng.lng]);
-if(temp) map.removeLayer(temp);
-temp=L.polyline(pts,{color:"#ff00ff",dashArray:"6,6"}).addTo(map);
-});
+      let drawing = false;
+      let points = [];
+      let tempLine;
 
-document.getElementById("finishDraw").onclick=()=>{
-if(!drawing||pts.length<3) return;
-drawing=false;if(temp) map.removeLayer(temp);
-L.polygon(pts,{
-color:COLORS[warnType.value],
-fillOpacity:.3,weight:2
-}).bindPopup(`<b>${warnType.value}</b><br>${warnDesc.value}<br><i>Custom Issued</i>`)
-.addTo(customLayer);
-};
-</script>
-</body>
+      function startDrawing() {
+        drawing = true;
+        points = [];
+        if (tempLine) tempLine.remove();
+        alert("Click map to add points. Double click to finish.");
+      }
+
+      map.on("click", (e) => {
+        if (!drawing) return;
+        points.push([e.latlng.lat, e.latlng.lng]);
+        if (tempLine) tempLine.remove();
+        tempLine = L.polyline(points, { color: "yellow" }).addTo(map);
+      });
+
+      map.on("dblclick", () => (drawing = false));
+
+      /* ================= WEBSOCKET API ================= */
+
+      const socket = new WebSocket(
+        "wss://" + window.location.hostname + ":8080"
+      );
+
+      socket.onmessage = function (event) {
+        const msg = JSON.parse(event.data);
+
+        if (msg.type === "INIT") {
+          msg.payload.forEach(drawWarning);
+        }
+
+        if (msg.type === "NEW_WARNING") {
+          drawWarning(msg.payload);
+        }
+
+        if (msg.type === "REMOVE_WARNING") {
+          removeWarning(msg.id);
+        }
+      };
+
+      function sendToServer(data) {
+        socket.send(JSON.stringify(data));
+      }
+
+      const activeWarnings = {};
+
+      function drawWarning(w) {
+        const poly = L.polygon(w.points, {
+          color: w.color,
+          fillOpacity: 0.35,
+        }).addTo(map);
+
+        poly.bindPopup(`
+    <b>${w.type}</b><br>
+    <b>Hazard:</b> ${w.hazard}<br><br>
+    ${w.desc}
+  `);
+
+        activeWarnings[w.id] = poly;
+
+        if (w.expires) {
+          const timeout = w.expires - Date.now();
+          if (timeout > 0) {
+            setTimeout(() => {
+              sendToServer({ type: "REMOVE_WARNING", id: w.id });
+            }, timeout);
+          }
+        }
+      }
+
+      function removeWarning(id) {
+        if (activeWarnings[id]) {
+          map.removeLayer(activeWarnings[id]);
+          delete activeWarnings[id];
+        }
+      }
+
+      /* ================= ISSUE FUNCTIONS ================= */
+
+      function issueNWS() {
+        if (points.length < 3) return alert("Draw polygon first.");
+
+        const id = Date.now() + Math.random();
+        const duration = parseInt(
+          document.getElementById("warnDuration").value
+        );
+
+        sendToServer({
+          type: "NEW_WARNING",
+          payload: {
+            id,
+            type: warnTypeSelect.value,
+            hazard: document.getElementById("hazardSelect").value,
+            desc: document.getElementById("warnDesc").value,
+            points,
+            color: "red",
+            expires: Date.now() + duration * 60000,
+          },
+        });
+
+        points = [];
+        if (tempLine) tempLine.remove();
+      }
+
+      function issueSPC() {
+        if (points.length < 3) return alert("Draw polygon first.");
+
+        const risk = document.getElementById("spcRisk").value;
+
+        const colors = {
+          TSTM: "green",
+          Marginal: "lime",
+          Slight: "yellow",
+          Enhanced: "orange",
+          Moderate: "red",
+          High: "magenta",
+        };
+
+        sendToServer({
+          type: "NEW_WARNING",
+          payload: {
+            id: Date.now() + Math.random(),
+            type: `SPC ${risk} Risk`,
+            hazard: risk,
+            desc: document.getElementById("spcDesc").value,
+            points,
+            color: colors[risk],
+            expires: null,
+          },
+        });
+
+        points = [];
+        if (tempLine) tempLine.remove();
+      }
+    </script>
+  </body>
 </html>
-
-
