@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Weather Warnings API Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+      body {
+        margin: 0;
+        background: #0b0f14;
+        color: white;
+        font-family: Arial;
+      }
+      #map {
+        position: absolute;
+        inset: 0;
+      }
+
+      .controls {
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        background: rgba(15, 20, 25, 0.97);
+        padding: 15px;
+        border-radius: 16px;
+        z-index: 1000;
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8);
+        max-width: 300px;
+      }
+
+      button {
+        width: 100%;
+        margin-bottom: 10px;
+        padding: 8px;
+        border-radius: 8px;
+        border: none;
+        background: #0077ff;
+        color: white;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #0099ff;
+      }
+
+      .stats {
+        font-size: 12px;
+        color: #ccc;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <div class="controls">
+      <h3>Weather Warnings API Demo</h3>
+      <p>This map fetches warnings from the API and displays them as polygons.</p>
+
+      <button onclick="updateWarnings()">Update Warnings</button>
+      <button onclick="clearWarnings()">Clear Warnings</button>
+      <button onclick="filterTornadoWarnings()">Show Only Tornado Warnings</button>
+      <button onclick="showAllWarnings()">Show All Warnings</button>
+
+      <div class="stats" id="stats">
+        Loading...
+      </div>
+    </div>
+
+    <script src="/weather-warnings-api.js"></script>
+
+    <script>
+      // Initialize map
+      const map = L.map("map").setView([39, -95], 5);
+      L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+      ).addTo(map);
+
+      // Initialize warnings API
+      const warningsAPI = new WeatherWarningsAPI();
+
+      // Update warnings display
+      async function updateWarnings() {
+        try {
+          await warningsAPI.updateMap(map, {
+            showPopups: true,
+            bringToFront: true,
+            onWarningClick: (warning) => {
+              console.log('Warning clicked:', warning);
+              alert(`${warning.type}: ${warning.hazard}`);
+            }
+          });
+          updateStats();
+        } catch (error) {
+          console.error('Error updating warnings:', error);
+          document.getElementById('stats').textContent = 'Error loading warnings';
+        }
+      }
+
+      function clearWarnings() {
+        warningsAPI.clearFromMap(map);
+        document.getElementById('stats').textContent = 'Warnings cleared';
+      }
+
+      async function filterTornadoWarnings() {
+        try {
+          await warningsAPI.fetchWarnings();
+          const tornadoWarnings = warningsAPI.getFilteredWarnings({
+            type: 'Tornado Warning'
+          });
+
+          // Clear current display
+          warningsAPI.clearFromMap(map);
+
+          // Temporarily set warnings to filtered list and display
+          const originalWarnings = warningsAPI.warnings;
+          warningsAPI.warnings = tornadoWarnings;
+          warningsAPI.addToMap(map, {
+            showPopups: true,
+            bringToFront: true
+          });
+
+          // Restore original list
+          warningsAPI.warnings = originalWarnings;
+
+          updateStats();
+        } catch (error) {
+          console.error('Error filtering warnings:', error);
+        }
+      }
+
+      async function showAllWarnings() {
+        await updateWarnings();
+      }
+
+      function updateStats() {
+        const stats = warningsAPI.getStatistics();
+        document.getElementById('stats').innerHTML = `
+          <strong>Statistics:</strong><br>
+          Total: ${stats.total}<br>
+          Active: ${stats.active}<br>
+          Expired: ${stats.expired}<br>
+          <br>
+          <strong>By Type:</strong><br>
+          ${Object.entries(stats.byType).map(([type, count]) => `${type}: ${count}`).join('<br>')}
+        `;
+      }
+
+      // Auto-update warnings every 30 seconds
+      updateWarnings();
+      setInterval(updateWarnings, 30000);
+    </script>
+  </body>
+</html>

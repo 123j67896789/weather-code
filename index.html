@@ -89,15 +89,97 @@
       .draw-btn {
         background: #444;
       }
+
+      .warning-item {
+        background: rgba(28, 39, 51, 0.8);
+        margin: 5px 0;
+        padding: 8px;
+        border-radius: 6px;
+        border-left: 4px solid;
+      }
+
+      .warning-extreme { border-left-color: red; }
+      .warning-high { border-left-color: orange; }
+      .warning-moderate { border-left-color: yellow; }
+      .warning-low { border-left-color: green; }
+
+      /* Radar marker styles */
+      .radar-site-marker {
+        background: rgba(0, 123, 255, 0.8);
+        border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 0 10px rgba(0, 123, 255, 0.5);
+        font-size: 20px;
+        text-align: center;
+        line-height: 26px;
+      }
+
+      .storm-cell-marker {
+        background: rgba(255, 193, 7, 0.8);
+        border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 0 8px rgba(255, 193, 7, 0.5);
+        font-size: 18px;
+        text-align: center;
+        line-height: 21px;
+      }
+
+      .hail-marker {
+        background: rgba(255, 140, 0, 0.8);
+        border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 0 8px rgba(255, 140, 0, 0.5);
+        font-size: 22px;
+        text-align: center;
+        line-height: 26px;
+      }
+
+      .rotation-marker {
+        background: rgba(220, 53, 69, 0.8);
+        border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 0 10px rgba(220, 53, 69, 0.5);
+        font-size: 22px;
+        text-align: center;
+        line-height: 26px;
+        animation: spin 2s linear infinite;
+      }
+
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      .radar-warning-marker {
+        background: rgba(220, 53, 69, 0.9);
+        border-radius: 50%;
+        border: 3px solid white;
+        box-shadow: 0 0 15px rgba(220, 53, 69, 0.7);
+        font-size: 24px;
+        text-align: center;
+        line-height: 29px;
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+        100% { transform: scale(1); }
+      }
     </style>
   </head>
   <body>
     <div id="map"></div>
 
     <div class="sidebar">
+      <div style="margin-bottom: 10px; padding: 8px; background: rgba(0, 100, 200, 0.3); border-radius: 6px; font-size: 12px;">
+        <span style="color: #ccc;">Connection: </span><span id="ws-status" style="color: #ffff00; font-weight: bold;">CONNECTING</span>
+      </div>
+      
       <div class="tabs">
         <button onclick="showTab('radar')" class="active">Radar</button>
         <button onclick="showTab('nws')">NWS</button>
+        <button onclick="showTab('warnings')">Warnings</button>
         <button onclick="showTab('spc')">SPC</button>
       </div>
 
@@ -106,8 +188,24 @@
         <h2>Radar</h2>
         <select id="radarProduct">
           <option value="n0q">Base Reflectivity</option>
+          <option value="n0u">Base Velocity</option>
+          <option value="n0v">Base Spectrum Width</option>
+          <option value="n0z">Base Differential Reflectivity (ZDR)</option>
+          <option value="n0c">Base Correlation Coefficient (CC)</option>
+          <option value="n0p">Base Differential Phase (PhiDP)</option>
+          <option value="n0k">Base Specific Differential Phase (KDP)</option>
           <option value="echo">Echo Tops</option>
         </select>
+        <select id="radarSite">
+          <option value="KDMX">Des Moines, IA (KDMX)</option>
+          <option value="KDVN">Davenport, IA (KDVN)</option>
+          <option value="KFSD">Sioux Falls, SD (KFSD)</option>
+          <option value="KMPX">Minneapolis, MN (KMPX)</option>
+          <option value="KMKX">Milwaukee, WI (KMKX)</option>
+        </select>
+        <button onclick="loadDecodedRadar()">Load Decoded Data</button>
+        <button onclick="clearRadarAnalysis()" style="background: #666; margin-left: 5px;">Clear Analysis</button>
+        <div id="radarInfo" style="margin-top: 10px; font-size: 12px; color: #ccc;"></div>
       </div>
 
       <!-- NWS -->
@@ -129,6 +227,7 @@
         />
 
         <button class="draw-btn" onclick="startDrawing()">Draw Polygon</button>
+        <button id="finishPolygonBtn" class="draw-btn" onclick="finishPolygon()" style="display: none;">Finish Polygon</button>
         <button onclick="issueNWS()">Issue Warning</button>
       </div>
 
@@ -150,7 +249,17 @@
         <button class="draw-btn" onclick="startDrawing()">
           Draw Risk Area
         </button>
+        <button id="finishPolygonBtn2" class="draw-btn" onclick="finishPolygon()" style="display: none;">Finish Polygon</button>
         <button onclick="issueSPC()">Issue SPC Outlook</button>
+      </div>
+
+      <div id="warnings" class="section">
+        <h2>Active Warnings</h2>
+        <div id="warningList" style="max-height: 400px; overflow-y: auto;">
+          <p>No active warnings</p>
+        </div>
+        <button onclick="clearAllWarnings()" style="background: #ff4444; margin-top: 10px;">Clear All Warnings</button>
+        <button onclick="testAlert()" style="background: #ff8800; margin-top: 10px; margin-left: 10px;">Test Alert</button>
       </div>
     </div>
 
@@ -165,6 +274,8 @@
       ).addTo(map);
 
       let radarLayer;
+      let decodedRadarData = null;
+      let analysisLayer;
 
       function loadRadar() {
         if (radarLayer) map.removeLayer(radarLayer);
@@ -173,7 +284,26 @@
           `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-${product}/{z}/{x}/{y}.png`
         ).addTo(map);
       }
+
+      function loadDecodedRadar() {
+        const site = document.getElementById("radarSite").value;
+        const product = document.getElementById("radarProduct").value;
+
+        document.getElementById("radarInfo").textContent = "Loading radar data...";
+
+        socket.send(JSON.stringify({
+          type: "REQUEST_RADAR",
+          site: site,
+          product: product
+        }));
+      }
+
       document.getElementById("radarProduct").onchange = loadRadar;
+      document.getElementById("radarSite").onchange = () => {
+        // Clear decoded data when site changes
+        decodedRadarData = null;
+        document.getElementById("radarInfo").textContent = "";
+      };
       loadRadar();
 
       /* ================= TABS ================= */
@@ -208,6 +338,17 @@
         ],
         "Winter Storm Warning": ["Heavy Snow", "Whiteout Conditions"],
         "Red Flag Warning": ["Extreme Fire Spread"],
+        "Tornado Watch": ["Conditions Favorable for Tornadoes"],
+        "Severe Thunderstorm Watch": ["Conditions Favorable for Severe Storms"],
+        "Flash Flood Watch": ["Conditions Favorable for Flash Flooding"],
+        "Winter Storm Watch": ["Conditions Favorable for Winter Storm"],
+        "Heat Advisory": ["Dangerous Heat Index"],
+        "Wind Advisory": ["Strong Wind Gusts"],
+        "Flood Advisory": ["Minor Flooding"],
+        "Freeze Warning": ["Sub-Freezing Temperatures"],
+        "Blizzard Warning": ["Heavy Snow and Strong Winds"],
+        "Hurricane Warning": ["Hurricane Conditions Expected"],
+        "Tropical Storm Warning": ["Tropical Storm Conditions Expected"],
       };
 
       const warnTypeSelect = document.getElementById("warnType");
@@ -234,12 +375,36 @@
       let drawing = false;
       let points = [];
       let tempLine;
+      let finalPolygon = null;
 
       function startDrawing() {
         drawing = true;
         points = [];
         if (tempLine) tempLine.remove();
-        alert("Click map to add points. Double click to finish.");
+        if (finalPolygon) finalPolygon.remove();
+        finalPolygon = null;
+        document.getElementById("finishPolygonBtn").style.display = "inline-block";
+        document.getElementById("finishPolygonBtn2").style.display = "inline-block";
+        alert("Click map to add points. Click 'Finish Polygon' to complete.");
+      }
+
+      function finishPolygon() {
+        if (!drawing || points.length < 3) {
+          alert("Need at least 3 points to create a polygon.");
+          return;
+        }
+        drawing = false;
+        document.getElementById("finishPolygonBtn").style.display = "none";
+        document.getElementById("finishPolygonBtn2").style.display = "none";
+        if (tempLine) tempLine.remove();
+        
+        // Draw the final polygon on the map so it stays visible
+        if (finalPolygon) finalPolygon.remove();
+        finalPolygon = L.polygon(points, {
+          color: "lime",
+          fillOpacity: 0.3,
+          weight: 2
+        }).addTo(map);
       }
 
       map.on("click", (e) => {
@@ -249,124 +414,929 @@
         tempLine = L.polyline(points, { color: "yellow" }).addTo(map);
       });
 
-      map.on("dblclick", () => (drawing = false));
+      /* ================= WEBSOCKET MANAGEMENT ================= */
 
-      /* ================= WEBSOCKET API ================= */
+      let socket = null;
+      let wsRetryCount = 0;
+      let wsRetryTimeout = null;
+      let wsConnecting = false;
 
-      const socket = new WebSocket(
-        "wss://" + window.location.hostname + ":8080"
-      );
-
-      socket.onmessage = function (event) {
-        const msg = JSON.parse(event.data);
-
-        if (msg.type === "INIT") {
-          msg.payload.forEach(drawWarning);
+      function connectWebSocket() {
+        // Already connected or connecting
+        if (wsConnecting || (socket && socket.readyState === WebSocket.OPEN)) {
+          return;
         }
 
-        if (msg.type === "NEW_WARNING") {
-          drawWarning(msg.payload);
+        // Clear any pending retry
+        if (wsRetryTimeout) {
+          clearTimeout(wsRetryTimeout);
+          wsRetryTimeout = null;
         }
 
-        if (msg.type === "REMOVE_WARNING") {
-          removeWarning(msg.id);
-        }
-      };
+        wsConnecting = true;
+        
+        // Build proper WebSocket URL using page's host/protocol
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host; // includes port if not default
+        const wsUrl = `${protocol}//${host}`;
+        
+        console.log(`[WS] Connecting to ${wsUrl}...`);
+        updateConnectionStatus('connecting');
 
-      function sendToServer(data) {
-        socket.send(JSON.stringify(data));
-      }
+        try {
+          socket = new WebSocket(wsUrl);
+          
+          socket.onopen = () => {
+            wsConnecting = false;
+            console.log('[WS] ✓ Connected');
+            wsRetryCount = 0;
+            updateConnectionStatus('connected');
+            showNotification('Connected', 'Connected to server');
+          };
 
-      const activeWarnings = {};
+          socket.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+              console.log('[WS] Received:', msg.type);
+              
+              if (msg.type === 'INIT' && msg.payload) {
+                msg.payload.forEach(w => drawWarning(w));
+              } else if (msg.type === 'NEW_WARNING' && msg.payload) {
+                drawWarning(msg.payload);
+              } else if (msg.type === 'REMOVE_WARNING') {
+                removeWarning(msg.id);
+              }
+            } catch (err) {
+              console.error('[WS] Message error:', err.message);
+            }
+          };
 
-      function drawWarning(w) {
-        const poly = L.polygon(w.points, {
-          color: w.color,
-          fillOpacity: 0.35,
-        }).addTo(map);
+          socket.onerror = (err) => {
+            wsConnecting = false;
+            console.error('[WS] Error:', err.message || err.type);
+            updateConnectionStatus('error');
+          };
 
-        poly.bindPopup(`
-    <b>${w.type}</b><br>
-    <b>Hazard:</b> ${w.hazard}<br><br>
-    ${w.desc}
-  `);
-
-        activeWarnings[w.id] = poly;
-
-        if (w.expires) {
-          const timeout = w.expires - Date.now();
-          if (timeout > 0) {
-            setTimeout(() => {
-              sendToServer({ type: "REMOVE_WARNING", id: w.id });
-            }, timeout);
+          socket.onclose = () => {
+            wsConnecting = false;
+            console.log('[WS] Closed');
+            updateConnectionStatus('disconnected');
+            
+            // Reconnect after delay
+            wsRetryCount++;
+            if (wsRetryCount <= 10) {
+              const delay = Math.min(1000 * Math.pow(1.5, wsRetryCount - 1), 30000);
+              console.log(`[WS] Will retry in ${Math.round(delay)}ms (attempt ${wsRetryCount}/10)`);
+              updateConnectionStatus('reconnecting', wsRetryCount);
+              
+              wsRetryTimeout = setTimeout(() => {
+                wsRetryTimeout = null;
+                connectWebSocket();
+              }, delay);
+            } else {
+              console.error('[WS] Max retries exceeded');
+              updateConnectionStatus('failed');
+            }
+          };
+        } catch (err) {
+          wsConnecting = false;
+          console.error('[WS] Connection error:', err.message);
+          updateConnectionStatus('error');
+          
+          // Retry
+          wsRetryCount++;
+          if (wsRetryCount <= 10) {
+            const delay = 2000;
+            console.log(`[WS] Retrying in ${delay}ms...`);
+            updateConnectionStatus('reconnecting', wsRetryCount);
+            
+            wsRetryTimeout = setTimeout(() => {
+              wsRetryTimeout = null;
+              connectWebSocket();
+            }, delay);
           }
         }
       }
 
+      function updateConnectionStatus(status, retryCount) {
+        const el = document.getElementById('ws-status');
+        if (!el) {
+          console.warn('[WS] Status element not found');
+          return;
+        }
+
+        const colors = {
+          'connected': '#0f0',
+          'connecting': '#ff0',
+          'reconnecting': '#f80',
+          'disconnected': '#f00',
+          'error': '#f00',
+          'failed': '#800'
+        };
+
+        try {
+          let text = status.charAt(0).toUpperCase() + status.slice(1);
+          if (retryCount) text += ` (${retryCount}/10)`;
+
+          el.textContent = text;
+          el.style.color = colors[status] || '#fff';
+        } catch (err) {
+          console.error('[WS] Failed to update status:', err.message);
+        }
+      }
+
+      function sendWarning(data) {
+        // Check socket state
+        if (!socket) {
+          console.error('[WS] Socket not initialized');
+          showNotification('Connection Error', 'Socket not initialized - try refreshing the page');
+          return false;
+        }
+
+        const states = {
+          0: 'CONNECTING',
+          1: 'OPEN',
+          2: 'CLOSING',
+          3: 'CLOSED'
+        };
+
+        const currentState = states[socket.readyState] || 'UNKNOWN';
+        console.log(`[WS] Socket state: ${socket.readyState} (${currentState})`);
+
+        if (socket.readyState !== WebSocket.OPEN) {
+          console.error(`[WS] Cannot send - socket state is ${currentState} (need OPEN)`);
+          showNotification('Connection Error', `Socket is ${currentState.toLowerCase()} - cannot send warning`);
+          return false;
+        }
+
+        try {
+          socket.send(JSON.stringify(data));
+          console.log('[WS] ✓ Sent:', data.type);
+          return true;
+        } catch (err) {
+          console.error('[WS] ✗ Send failed:', err.message);
+          showNotification('Send Error', err.message);
+          return false;
+        }
+      }
+
+      // Auto-connect on page load
+      document.addEventListener('DOMContentLoaded', () => {
+        connectWebSocket();
+      });
+
+      /* ================= WARNING MANAGEMENT ================= */
+
+      const activeWarnings = {};
+
+      function drawWarning(w) {
+        try {
+          console.log('[drawWarning] ID:', w.id, 'Type:', w.type, 'Points:', w.points?.length);
+
+          if (!map) {
+            console.error('[drawWarning] Map not initialized yet');
+            return;
+          }
+
+          if (!w || !w.id) {
+            console.error('[drawWarning] Invalid: no ID');
+            return;
+          }
+
+          if (!w.points || !Array.isArray(w.points) || w.points.length < 3) {
+            console.error('[drawWarning] Invalid points');
+            return;
+          }
+
+          // Don't redraw if already exists
+          if (activeWarnings[w.id]) {
+            console.log('[drawWarning] Already on map');
+            return;
+          }
+
+          const poly = L.polygon(w.points, {
+            color: w.color || 'red',
+            fillColor: w.color || 'red',
+            fillOpacity: 0.35,
+            weight: 3,
+            warningData: w
+          }).addTo(map);
+
+          poly.bringToFront();
+
+          poly.bindPopup(`
+            <b style="color: ${w.color}">${w.type}</b><br>
+            <b>Hazard:</b> ${w.hazard}<br>
+            ${w.desc ? `<b>Description:</b> ${w.desc}<br>` : ''}
+            ${w.expires ? `<b>Expires:</b> ${new Date(w.expires).toLocaleTimeString()}<br>` : ''}
+          `);
+
+          activeWarnings[w.id] = poly;
+          updateWarningList();
+          console.log('[drawWarning] ✓ Added');
+        } catch (err) {
+          console.error('[drawWarning] Exception:', err.message);
+        }
+      }
+
       function removeWarning(id) {
+        console.log('[removeWarning]', id);
         if (activeWarnings[id]) {
           map.removeLayer(activeWarnings[id]);
           delete activeWarnings[id];
+          updateWarningList();
+          sendWarning({ type: 'REMOVE_WARNING', id });
         }
       }
+
+      function updateWarningList() {
+        const list = document.getElementById('warningList');
+        if (!list) return;
+
+        const ids = Object.keys(activeWarnings);
+        if (ids.length === 0) {
+          list.innerHTML = '<p>No active warnings</p>';
+          return;
+        }
+
+        list.innerHTML = ids.map(id => {
+          const poly = activeWarnings[id];
+          const w = poly.options.warningData;
+          return `
+            <div class="warning-item" style="border-left-color: ${w.color}">
+              <div>
+                <b>${w.type}</b><br>
+                <small>${w.hazard}</small>
+              </div>
+              <button onclick="removeWarning('${w.id}')" 
+                style="float:right; bg:#f44; color:#fff; border:0; padding:2px 6px; border-radius:3px; cursor:pointer; font-size:11px;">
+                ✕
+              </button>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function clearAllWarnings() {
+        Object.keys(activeWarnings).forEach(id => removeWarning(id));
+      }
+
+      function displayRadarInfo(data) {
+        if (!data) {
+          document.getElementById("radarInfo").textContent = "No radar data available";
+          return;
+        }
+
+        const info = document.getElementById("radarInfo");
+        let html = `
+          <strong>${data.productInfo.name}</strong><br>
+          Site: ${data.site}<br>
+          Generated: ${new Date(data.timestamp).toLocaleTimeString()}<br>
+          <strong>Statistics:</strong><br>
+          Mean: ${data.statistics.mean.toFixed(1)} ${data.productInfo.unit}<br>
+          Max: ${data.statistics.max.toFixed(1)} ${data.productInfo.unit}<br>
+          Min: ${data.statistics.min.toFixed(1)} ${data.productInfo.unit}<br>
+          Coverage: ${data.statistics.coverage.toFixed(1)}%<br>
+        `;
+
+        if (data.analysis) {
+          html += `<strong>Analysis:</strong><br>`;
+
+          if (data.analysis.maxReflectivity) {
+            html += `Max Reflectivity: ${data.analysis.maxReflectivity.toFixed(1)} dBZ<br>`;
+          }
+          if (data.analysis.maxVelocity) {
+            html += `Max Velocity: ${data.analysis.maxVelocity.toFixed(1)} knots<br>`;
+          }
+          if (data.analysis.stormCells) {
+            html += `Storm Cells: ${data.analysis.stormCells}<br>`;
+          }
+          if (data.analysis.rotationDetected) {
+            html += `<span style="color: red;">⚠️ Rotation Detected</span><br>`;
+          }
+          if (data.analysis.hailPotential) {
+            html += `<span style="color: orange;">⚠️ Hail Potential</span><br>`;
+          }
+          if (data.analysis.precipitationType) {
+            html += `Precipitation: ${data.analysis.precipitationType}<br>`;
+          }
+
+          if (data.analysis.features && data.analysis.features.length > 0) {
+            html += `Features: ${data.analysis.features.join(', ')}<br>`;
+          }
+        }
+
+        // Check for severe weather threats
+        const threats = data.threats || [];
+        if (threats.length > 0) {
+          html += `<strong style="color: red;">⚠️ THREATS DETECTED:</strong><br>`;
+          threats.forEach(threat => {
+            html += `<span style="color: red;">• ${threat}</span><br>`;
+          });
+        }
+
+        info.innerHTML = html;
+
+        // Auto-issue warnings for severe radar threats
+        if (data.threats && data.threats.length > 0) {
+          data.threats.forEach(threat => {
+            autoIssueRadarWarning(threat, data);
+          });
+        }
+      }
+
+      function displayRadarOnMap(data) {
+        // Clear previous analysis layer
+        if (analysisLayer) {
+          map.removeLayer(analysisLayer);
+        }
+
+        analysisLayer = L.layerGroup().addTo(map);
+
+        // Ensure warnings stay on top
+        Object.values(activeWarnings).forEach(warning => {
+          if (warning && map.hasLayer(warning)) {
+            warning.bringToFront();
+          }
+        });
+
+        // Get radar site location (approximate coordinates for major sites)
+        const siteCoords = getRadarSiteCoords(data.site);
+
+        if (siteCoords) {
+          // Add radar site marker
+          L.marker(siteCoords, {
+            icon: L.divIcon({
+              className: 'radar-site-marker',
+              html: '📡',
+              iconSize: [30, 30],
+              iconAnchor: [15, 15]
+            })
+          }).addTo(analysisLayer).bindPopup(`<b>${data.site} Radar</b><br>${data.productInfo.name}`);
+
+          // Add analysis overlays based on data
+          if (data.analysis) {
+            // Add storm cell markers if detected
+            if (data.analysis.stormCells && data.analysis.stormCells > 0) {
+              for (let i = 0; i < data.analysis.stormCells; i++) {
+                const offsetLat = (Math.random() - 0.5) * 2; // Random offset within ~100 miles
+                const offsetLng = (Math.random() - 0.5) * 2;
+
+                const stormLat = siteCoords[0] + offsetLat;
+                const stormLng = siteCoords[1] + offsetLng;
+
+                L.marker([stormLat, stormLng], {
+                  icon: L.divIcon({
+                    className: 'storm-cell-marker',
+                    html: '⛈️',
+                    iconSize: [25, 25],
+                    iconAnchor: [12, 12]
+                  })
+                }).addTo(analysisLayer).bindPopup(`<b>Storm Cell ${i + 1}</b><br>Detected by ${data.productInfo.name}`);
+              }
+            }
+
+            // Add severe weather warning circles
+            if (data.threats && data.threats.length > 0) {
+              data.threats.forEach((threat, index) => {
+                const threatLat = siteCoords[0] + (Math.random() - 0.5) * 1.5;
+                const threatLng = siteCoords[1] + (Math.random() - 0.5) * 1.5;
+
+                // Create warning polygon based on threat type
+                const warningColor = getWarningColorFromThreat(threat);
+                const warningPoints = generateWarningPolygon([threatLat, threatLng], 0.5); // 0.5 degree radius
+
+                L.polygon(warningPoints, {
+                  color: warningColor,
+                  fillColor: warningColor,
+                  fillOpacity: 0.4,
+                  weight: 3,
+                  opacity: 0.8
+                }).addTo(analysisLayer).bindPopup(`
+                  <b style="color: ${warningColor};">⚠️ RADAR WARNING</b><br>
+                  <strong>${threat}</strong><br>
+                  <em>Detected by ${data.productInfo.name}</em><br>
+                  <small>Auto-generated from radar analysis</small>
+                `);
+
+                // Add warning icon
+                L.marker([threatLat, threatLng], {
+                  icon: L.divIcon({
+                    className: 'radar-warning-marker',
+                    html: getWarningIcon(threat),
+                    iconSize: [35, 35],
+                    iconAnchor: [17, 17]
+                  })
+                }).addTo(analysisLayer);
+              });
+            }
+
+            // Add hail potential indicators
+            if (data.analysis.hailPotential) {
+              const hailLat = siteCoords[0] + (Math.random() - 0.5) * 1;
+              const hailLng = siteCoords[1] + (Math.random() - 0.5) * 1;
+
+              L.marker([hailLat, hailLng], {
+                icon: L.divIcon({
+                  className: 'hail-marker',
+                  html: '🌨️',
+                  iconSize: [30, 30],
+                  iconAnchor: [15, 15]
+                })
+              }).addTo(analysisLayer).bindPopup(`<b style="color: orange;">⚠️ Hail Potential</b><br>Detected by ${data.productInfo.name}`);
+            }
+
+            // Add rotation indicators
+            if (data.analysis.rotationDetected) {
+              const rotationLat = siteCoords[0] + (Math.random() - 0.5) * 1.2;
+              const rotationLng = siteCoords[1] + (Math.random() - 0.5) * 1.2;
+
+              L.marker([rotationLat, rotationLng], {
+                icon: L.divIcon({
+                  className: 'rotation-marker',
+                  html: '🌀',
+                  iconSize: [30, 30],
+                  iconAnchor: [15, 15]
+                })
+              }).addTo(analysisLayer).bindPopup(`<b style="color: red;">⚠️ Rotation Detected</b><br>Possible tornado formation<br>Detected by ${data.productInfo.name}`);
+            }
+          }
+
+          // Add coverage area circle (approximate radar range)
+          L.circle(siteCoords, {
+            color: 'blue',
+            fillColor: 'blue',
+            fillOpacity: 0.1,
+            radius: 230000, // ~230km range
+            weight: 2,
+            dashArray: '5, 5'
+          }).addTo(analysisLayer).bindPopup(`<b>${data.site} Radar Coverage</b><br>Approximate range: 230km`);
+        }
+      }
+
+      function clearRadarAnalysis() {
+        if (analysisLayer) {
+          map.removeLayer(analysisLayer);
+          analysisLayer = null;
+        }
+        document.getElementById("radarInfo").innerHTML = "";
+        decodedRadarData = null;
+      }
+
+      function detectSevereWeather(data) {
+        // Simple severe weather detection algorithm
+        const threats = [];
+
+        if (data.product === 'n0q' && data.analysis && data.analysis.maxReflectivity > 45) {
+          threats.push('Severe thunderstorm potential');
+        }
+
+        if (data.product === 'n0u' && data.analysis && data.analysis.rotationDetected) {
+          threats.push('Rotation detected - possible tornado');
+        }
+
+        if (data.product === 'n0z' && data.analysis && data.analysis.hailPotential) {
+          threats.push('Hail potential detected');
+        }
+
+        return threats;
+      }
+
+
+      /* Old functions removed - see WebSocket section for replacements */
 
       /* ================= ISSUE FUNCTIONS ================= */
 
       function issueNWS() {
-        if (points.length < 3) return alert("Draw polygon first.");
+        console.log('[issueNWS] Creating warning with', points.length, 'points');
+        if (points.length < 3) {
+          showNotification('Error', 'Draw a polygon first (need at least 3 points)');
+          return;
+        }
 
-        const id = Date.now() + Math.random();
-        const duration = parseInt(
-          document.getElementById("warnDuration").value
-        );
+        // Check if socket is connecting - give it a moment
+        if (socket && socket.readyState === WebSocket.CONNECTING) {
+          console.log('[issueNWS] Socket still connecting, waiting...');
+          showNotification('Waiting', 'Waiting for connection...');
+          setTimeout(() => issueNWS(), 1000);
+          return;
+        }
+
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          console.error('[issueNWS] Socket not ready');
+          showNotification('Not Connected', 'Please wait for server connection to be established');
+          return;
+        }
+
+        const type = warnTypeSelect.value;
+        const colors = {
+          'Tornado Warning': 'red',
+          'Severe Thunderstorm Warning': 'orange',
+          'Flash Flood Warning': 'purple',
+          'Winter Storm Warning': 'blue',
+          'Red Flag Warning': 'red',
+          'Tornado Watch': 'yellow',
+          'Severe Thunderstorm Watch': 'yellow',
+          'Flash Flood Watch': 'yellow',
+          'Winter Storm Watch': 'yellow',
+          'Heat Advisory': 'orange',
+          'Wind Advisory': 'green',
+          'Flood Advisory': 'blue',
+          'Freeze Warning': 'cyan',
+          'Blizzard Warning': 'blue',
+          'Hurricane Warning': 'red',
+          'Tropical Storm Warning': 'orange',
+        };
+
+        const warning = {
+          id: 'w_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+          type: type,
+          hazard: document.getElementById('hazardSelect').value,
+          desc: document.getElementById('warnDesc').value,
+          points: JSON.parse(JSON.stringify(points)), // Deep copy to ensure clean data
+          color: colors[type] || 'red',
+          expires: Date.now() + parseInt(document.getElementById('warnDuration').value) * 60000,
+          priority: 'high'
+        };
+
+        console.log('[issueNWS] Warning object:', {id: warning.id, type: warning.type, pointCount: warning.points.length});
+
+        // Send to server
+        if (sendWarning({ type: 'NEW_WARNING', payload: warning })) {
+          console.log('[issueNWS] ✓ Warning sent');
+          // Clear the drawing
+          points = [];
+          if (tempLine) tempLine.remove();
+          if (finalPolygon) finalPolygon.remove();
+          finalPolygon = null;
+          document.getElementById('finishPolygonBtn').style.display = 'none';
+          document.getElementById('finishPolygonBtn2').style.display = 'none';
+          showNotification('Warning Sent', `${type} sent to server`);
+        }
+      }
+
+      function issueSPC() {
+        console.log('[issueSPC] Creating outlook with', points.length, 'points');
+        if (points.length < 3) {
+          showNotification('Error', 'Draw a polygon first (need at least 3 points)');
+          return;
+        }
+
+        // Check if socket is connecting - give it a moment
+        if (socket && socket.readyState === WebSocket.CONNECTING) {
+          console.log('[issueSPC] Socket still connecting, waiting...');
+          showNotification('Waiting', 'Waiting for connection...');
+          setTimeout(() => issueSPC(), 1000);
+          return;
+        }
+
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          console.error('[issueSPC] Socket not ready');
+          showNotification('Not Connected', 'Please wait for server connection to be established');
+          return;
+        }
+
+        const colors = {
+          'TSTM': 'green',
+          'Marginal': 'lime',
+          'Slight': 'yellow',
+          'Enhanced': 'orange',
+          'Moderate': 'red',
+          'High': 'magenta',
+        };
+
+        const risk = document.getElementById('spcRisk').value;
+        const warning = {
+          id: 'spc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+          type: `SPC ${risk} Risk`,
+          hazard: risk,
+          desc: document.getElementById('spcDesc').value,
+          points: JSON.parse(JSON.stringify(points)), // Deep copy
+          color: colors[risk] || 'red',
+          expires: null,
+          priority: 'medium'
+        };
+
+        console.log('[issueSPC] Outlook object:', {id: warning.id, type: warning.type, pointCount: warning.points.length});
+
+        if (sendWarning({ type: 'NEW_WARNING', payload: warning })) {
+          console.log('[issueSPC] ✓ Outlook sent');
+          points = [];
+          if (tempLine) tempLine.remove();
+          if (finalPolygon) finalPolygon.remove();
+          finalPolygon = null;
+          document.getElementById('finishPolygonBtn').style.display = 'none';
+          document.getElementById('finishPolygonBtn2').style.display = 'none';
+          showNotification('Outlook Sent', `SPC ${risk} outlook sent to server`);
+        }
+      }
+
+      function testAlert() {
+        playAlertSound('warning');
+        showNotification('Test Alert', 'This is a test of the warning system');
+
+        const now = Date.now();
+        const demo = {
+          id: 'demo_' + now,
+          type: 'Demo Warning',
+          hazard: 'Demo Hazard',
+          desc: 'Generated by Test Alert button',
+          points: [
+            [39.5, -95],
+            [39.5, -94.5],
+            [39, -94.5],
+            [39, -95],
+          ],
+          color: 'cyan',
+          expires: now + 5 * 60 * 1000,
+          priority: 'low',
+        };
+        
+        if (sendWarning({ type: 'NEW_WARNING', payload: demo })) {
+          drawWarning(demo);
+        }
+      }
+
+      function playAlertSound(type) {
+        // Create audio context for alert sounds
+        try {
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+
+          // Different sounds for different alert types
+          switch(type) {
+            case 'tornado':
+              oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+              oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+              break;
+            case 'severe':
+              oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
+              oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.1);
+              break;
+            case 'warning':
+            default:
+              oscillator.frequency.setValueAtTime(600, audioContext.currentTime);
+              break;
+          }
+
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.5);
+        } catch (e) {
+          console.log('Audio not supported');
+        }
+      }
+
+      function showNotification(title, message) {
+        // Browser notification
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(title, { body: message, icon: '/favicon.ico' });
+        } else if ('Notification' in window && Notification.permission !== 'denied') {
+          Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+              new Notification(title, { body: message });
+            }
+          });
+        }
+
+        // Also show in console
+        console.warn(`${title}: ${message}`);
+      }
+
+      function getWarningColorFromThreat(threat) {
+        if (threat.includes('tornado')) return 'red';
+        if (threat.includes('Severe thunderstorm')) return 'orange';
+        if (threat.includes('hail')) return 'orange';
+        if (threat.includes('flood')) return 'purple';
+        if (threat.includes('heavy precipitation')) return 'blue';
+        return 'yellow';
+      }
+
+      function getWarningIcon(threat) {
+        if (threat.includes('tornado')) return '🌪️';
+        if (threat.includes('rotation')) return '🌀';
+        if (threat.includes('hail')) return '🌨️';
+        if (threat.includes('thunderstorm')) return '⛈️';
+        if (threat.includes('flood')) return '🌊';
+        return '⚠️';
+      }
+
+      function generateWarningPolygon(center, radiusDegrees) {
+        // Generate a hexagonal warning polygon around the center point
+        const points = [];
+        const sides = 6;
+        const angleStep = (2 * Math.PI) / sides;
+
+        for (let i = 0; i < sides; i++) {
+          const angle = i * angleStep;
+          const lat = center[0] + radiusDegrees * Math.cos(angle);
+          const lng = center[1] + radiusDegrees * Math.sin(angle);
+          points.push([lat, lng]);
+        }
+
+        return points;
+      }
+
+      function autoIssueRadarWarning(threat, radarData) {
+        // Only auto-issue for extreme threats
+        if (!threat.includes('tornado') && !threat.includes('Severe thunderstorm')) {
+          return;
+        }
+
+        const siteCoords = getRadarSiteCoords(radarData.site);
+        if (!siteCoords) return;
+
+        // Generate warning polygon around the radar site
+        const warningPoints = generateWarningPolygon(siteCoords, 1.0); // 1 degree radius
+
+        const id = `radar_${radarData.site}_${Date.now()}_${Math.random()}`;
+        const warningType = threat.includes('tornado') ? 'Tornado Warning' : 'Severe Thunderstorm Warning';
+        const warningColor = getWarningColorFromThreat(threat);
 
         sendToServer({
           type: "NEW_WARNING",
           payload: {
             id,
-            type: warnTypeSelect.value,
-            hazard: document.getElementById("hazardSelect").value,
-            desc: document.getElementById("warnDesc").value,
-            points,
-            color: "red",
-            expires: Date.now() + duration * 60000,
+            type: `Radar-Detected ${warningType}`,
+            hazard: threat,
+            desc: `Automatically issued based on ${radarData.productInfo.name} analysis from ${radarData.site} radar.`,
+            points: warningPoints,
+            color: warningColor,
+            expires: Date.now() + 1800000, // 30 minutes
+            priority: threat.includes('tornado') ? 'extreme' : 'high',
+            source: 'radar'
           },
         });
-
-        points = [];
-        if (tempLine) tempLine.remove();
       }
 
-      function issueSPC() {
-        if (points.length < 3) return alert("Draw polygon first.");
-
-        const risk = document.getElementById("spcRisk").value;
-
-        const colors = {
-          TSTM: "green",
-          Marginal: "lime",
-          Slight: "yellow",
-          Enhanced: "orange",
-          Moderate: "red",
-          High: "magenta",
+      function getRadarSiteCoords(site) {
+        const sites = {
+          'KTLX': [35.333, -97.278], // Oklahoma City, OK
+          'KOUN': [35.245, -97.471], // Norman, OK
+          'KINX': [36.175, -95.564], // Tulsa, OK
+          'KSRX': [35.290, -94.362], // Fort Smith, AR
+          'KLWX': [38.975, -77.478], // Sterling, VA
+          'KBGM': [42.200, -75.985], // Binghamton, NY
+          'KBOX': [41.956, -71.137], // Boston, MA
+          'KCBW': [46.039, -67.807], // Caribou, ME
+          'KCBX': [43.490, -116.236], // Boise, ID
+          'KCLE': [41.413, -81.860], // Cleveland, OH
+          'KCRP': [27.784, -97.511], // Corpus Christi, TX
+          'KCXX': [44.511, -73.167], // Burlington, VT
+          'KCYS': [41.152, -104.806], // Cheyenne, WY
+          'KDAX': [38.501, -121.678], // Sacramento, CA
+          'KDDC': [37.761, -99.969], // Dodge City, KS
+          'KDFX': [29.273, -100.280], // Laughlin AFB, TX
+          'KDGX': [32.280, -89.985], // Brandon, MS
+          'KDMX': [41.731, -93.723], // Des Moines, IA
+          'KDOX': [38.826, -75.440], // Dover AFB, DE
+          'KDTX': [42.700, -83.472], // Detroit, MI
+          'KDVN': [41.612, -90.581], // Davenport, IA
+          'KDYX': [32.539, -99.254], // Dyess AFB, TX
+          'KEAX': [38.810, -94.264], // Kansas City, MO
+          'KEGX': [32.876, -97.029], // Fort Hood, TX
+          'KEPZ': [31.873, -106.698], // Santa Teresa, NM
+          'KESX': [35.701, -114.891], // Las Vegas, NV
+          'KEVX': [30.564, -85.922], // Eglin AFB, FL
+          'KEWX': [29.704, -98.029], // Austin, TX
+          'KEYX': [35.098, -117.561], // Edwards AFB, CA
+          'KFCX': [37.024, -80.274], // Blacksburg, VA
+          'KFDR': [34.362, -98.977], // Frederick, OK
+          'KFFC': [33.363, -84.566], // Peachtree City, GA
+          'KFSD': [43.587, -96.729], // Sioux Falls, SD
+          'KFSX': [34.574, -111.199], // Flagstaff, AZ
+          'KFTG': [39.786, -104.546], // Denver, CO
+          'KFWS': [32.573, -97.303], // Fort Worth, TX
+          'KGGW': [48.206, -106.625], // Glasgow, MT
+          'KGJX': [39.062, -108.213], // Grand Junction, CO
+          'KGLD': [39.367, -101.700], // Goodland, KS
+          'KGRB': [44.498, -88.111], // Green Bay, WI
+          'KGRK': [30.722, -97.383], // Fort Hood, TX
+          'KGRR': [42.894, -85.545], // Grand Rapids, MI
+          'KGSP': [34.883, -82.220], // Greenville, SC
+          'KGWX': [33.897, -88.329], // Columbus, MS
+          'KGYX': [43.891, -70.256], // Portland, ME
+          'KHDX': [33.076, -106.120], // Holloman AFB, NM
+          'KHGX': [29.472, -95.079], // Houston, TX
+          'KHNX': [36.314, -119.632], // Hanford, CA
+          'KHPX': [36.737, -87.286], // Fort Campbell, KY
+          'KHTX': [34.931, -86.084], // Huntsville, AL
+          'KICT': [37.655, -97.443], // Wichita, KS
+          'KICX': [37.591, -112.862], // Cedar City, UT
+          'KILN': [39.420, -83.822], // Wilmington, OH
+          'KILX': [40.150, -89.337], // Lincoln, IL
+          'KIND': [39.708, -86.280], // Indianapolis, IN
+          'KINX': [36.175, -95.564], // Tulsa, OK
+          'KIWA': [33.289, -111.670], // Phoenix, AZ
+          'KIWX': [41.359, -85.700], // North Webster, IN
+          'KJAN': [32.319, -90.080], // Jackson, MS
+          'KJAX': [30.485, -81.702], // Jacksonville, FL
+          'KJGX': [32.675, -83.351], // Robins AFB, GA
+          'KJKL': [37.591, -83.313], // Jackson, KY
+          'KLBB': [33.654, -101.814], // Lubbock, TX
+          'KLCH': [30.125, -93.216], // Lake Charles, LA
+          'KLGX': [47.116, -124.106], // Langley Hill, WA
+          'KLIX': [30.336, -89.826], // Slidell, LA
+          'KLNX': [41.958, -100.576], // North Platte, NE
+          'KLOT': [41.604, -88.085], // Chicago, IL
+          'KLRX': [40.740, -116.803], // Elko, NV
+          'KLSX': [38.699, -90.683], // St. Louis, MO
+          'KLTX': [33.989, -78.429], // Wilmington, NC
+          'KLVX': [37.975, -85.944], // Louisville, KY
+          'KLWX': [38.975, -77.478], // Sterling, VA
+          'KLZK': [34.836, -92.262], // Little Rock, AR
+          'KMAF': [31.943, -102.189], // Midland, TX
+          'KMAX': [42.081, -122.717], // Medford, OR
+          'KMBX': [48.393, -100.864], // Minot, ND
+          'KMHX': [34.776, -76.876], // Morehead City, NC
+          'KMKX': [42.968, -88.551], // Milwaukee, WI
+          'KMLB': [28.113, -80.654], // Melbourne, FL
+          'KMOB': [30.679, -88.240], // Mobile, AL
+          'KMPX': [44.849, -93.566], // Minneapolis, MN
+          'KMQT': [46.531, -87.548], // Marquette, MI
+          'KMRX': [36.168, -83.402], // Knoxville, TN
+          'KMSX': [47.041, -113.986], // Missoula, MT
+          'KMTX': [41.263, -112.448], // Salt Lake City, UT
+          'KMUX': [37.155, -121.898], // San Francisco, CA
+          'KMVX': [47.528, -97.325], // Grand Forks, ND
+          'KMXX': [32.537, -85.790], // Maxwell AFB, AL
+          'KNKX': [32.919, -117.041], // San Diego, CA
+          'KNQA': [35.345, -89.874], // Memphis, TN
+          'KOAX': [41.320, -96.367], // Omaha, NE
+          'KOHX': [36.247, -86.563], // Nashville, TN
+          'KOKX': [40.865, -72.864], // Upton, NY
+          'KOTX': [47.681, -117.626], // Spokane, WA
+          'KPAH': [37.068, -88.772], // Paducah, KY
+          'KPBZ': [40.532, -80.218], // Pittsburgh, PA
+          'KPDT': [45.691, -118.853], // Pendleton, OR
+          'KPOE': [31.156, -92.976], // Fort Polk, LA
+          'KPUX': [38.461, -104.181], // Pueblo, CO
+          'KRAX': [35.666, -78.490], // Raleigh, NC
+          'KRGX': [39.754, -119.462], // Reno, NV
+          'KRIW': [43.066, -108.477], // Riverton, WY
+          'KRLX': [38.311, -81.723], // Charleston, WV
+          'KRTX': [45.715, -122.965], // Portland, OR
+          'KSFX': [43.106, -112.686], // Pocatello, ID
+          'KSGF': [37.235, -93.400], // Springfield, MO
+          'KSHV': [32.451, -93.841], // Shreveport, LA
+          'KSJT': [31.371, -100.492], // San Angelo, TX
+          'KSOX': [33.818, -117.636], // Santa Ana, CA
+          'KSRX': [35.290, -94.362], // Fort Smith, AR
+          'KTFX': [47.460, -111.385], // Great Falls, MT
+          'KTLH': [30.398, -84.329], // Tallahassee, FL
+          'KTLX': [35.333, -97.278], // Oklahoma City, OK
+          'KTWX': [38.997, -96.232], // Topeka, KS
+          'KTYX': [43.756, -75.680], // Montague, NY
+          'KUDX': [44.125, -102.830], // Rapid City, SD
+          'KUEX': [40.321, -98.442], // Hastings, NE
+          'KVAX': [30.890, -83.002], // Moody AFB, GA
+          'KVNX': [36.741, -98.128], // Vance AFB, OK
+          'KVTX': [34.413, -119.181], // Los Angeles, CA
+          'KVWX': [38.260, -87.725], // Evansville, IN
+          'KYUX': [32.495, -114.657], // Yuma, AZ
+          'KAPX': [44.907, -84.720], // Gaylord, MI
+          'KDTX': [42.700, -83.472]  // Detroit, MI
         };
-
-        sendToServer({
-          type: "NEW_WARNING",
-          payload: {
-            id: Date.now() + Math.random(),
-            type: `SPC ${risk} Risk`,
-            hazard: risk,
-            desc: document.getElementById("spcDesc").value,
-            points,
-            color: colors[risk],
-            expires: null,
-          },
-        });
-
-        points = [];
-        if (tempLine) tempLine.remove();
+        return sites[site] || null;
       }
+
+      // ================= API FUNCTIONS =================
+
+      async function fetchWarningsFromAPI() {
+        try {
+          const response = await fetch('/warnings');
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const data = await response.json();
+          console.log('[API] Fetched warnings:', data.warnings.length);
+
+          // Clear existing warnings and re-draw from API
+          Object.keys(activeWarnings).forEach(id => {
+            if (activeWarnings[id]) {
+              map.removeLayer(activeWarnings[id]);
+            }
+          });
+          activeWarnings = {};
+
+          // Draw warnings from API
+          data.warnings.forEach(warning => {
+            drawWarning(warning);
+          });
+
+          updateWarningList();
+        } catch (error) {
+          console.error('[API] Error fetching warnings:', error);
+        }
+      }
+
+      // ================= END OF SCRIPT =================
     </script>
   </body>
 </html>
